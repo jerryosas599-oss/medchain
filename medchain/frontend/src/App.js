@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 const API = process.env.REACT_APP_BASE_URL || 'http://localhost:5000/api';
 
@@ -10,7 +10,7 @@ function App() {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('patient');
   const [error, setError] = useState('');
-  const [dbStatus, setDbStatus] = useState('checking...');
+  // const [dbStatus, setDbStatus] = useState('checking...');
   const [records, setRecords] = useState([]);
   const [recordTitle, setRecordTitle] = useState('');
   const [recordContent, setRecordContent] = useState('');
@@ -19,17 +19,17 @@ function App() {
   useEffect(() => {
     fetch(`${API}/health`)
       .then(r => r.json())
-      .then(() => setDbStatus('Connected ✅'))
-      .catch(() => setDbStatus('Not connected ❌'));
+      // .then(() => setDbStatus('Connected ✅'))
+      // .catch(() => setDbStatus('Not connected ❌'));
   }, []);
 
   useEffect(() => {
     if (user) fetchRecords();
-  }, [user]);
+  }, [fetchRecords, user]);
 
   const token = () => localStorage.getItem('token');
 
-  const fetchRecords = async () => {
+  const fetchRecords = useCallback(async () => {
     try {
       const res = await fetch(`${API}/records`, {
         headers: { Authorization: `Bearer ${token()}` }
@@ -38,7 +38,7 @@ function App() {
       if (Array.isArray(data.records)) setRecords(data.records);
       else if (Array.isArray(data)) setRecords(data);
     } catch {}
-  };
+  }, []);
 
   const handleLogin = async () => {
     setError('');
