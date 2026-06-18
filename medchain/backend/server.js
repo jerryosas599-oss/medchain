@@ -10,6 +10,7 @@ import cors from 'cors';
 import authRoutes from './routes/auth.js';
 import recordRoutes from './routes/records.js';
 import auditRoutes from './routes/audit.js';
+import { connectDB } from './db/mongo.js';
 
 const app = express();
 
@@ -24,6 +25,9 @@ app.use((req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   next();
 });
+
+// Connect DB and then mount routes
+await connectDB();
 
 // ── Routes ────────────────────────────────────────────────
 app.use('/api/auth',    authRoutes);

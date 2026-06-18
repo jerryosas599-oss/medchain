@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import * as crypto from 'crypto';
 
 /**
  * Hash a record object with SHA-256.
@@ -54,7 +54,7 @@ function buildChainedHash(entry, previousHash) {
  * @returns {string}
  */
 function hashString(value) {
-  return createHash('sha256').update(String(value)).digest('hex');
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
 export { hashRecord, verifyRecord, buildChainedHash, hashString };

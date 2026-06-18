@@ -1,17 +1,17 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { query } from '../db/pool.js';
+import { getCollection } from '../db/mongo.js';
 import { buildChainedHash } from '../utils/hash.js';
+import { ObjectId } from 'mongodb';
 
 const router = Router();
 
 /** Retrieve the last audit log hash (used for chaining). */
 async function getLastLogHash() {
-  const r = await query(
-    'SELECT current_log_hash FROM audit_logs ORDER BY timestamp DESC LIMIT 1'
-  );
-  return r.rows[0]?.current_log_hash || 'GENESIS_BLOCK';
+  const col = getCollection('audit_logs');
+  const last = await col.find({}).sort({ timestamp: -1 }).limit(1).toArray();
+  return last[0]?.current_log_hash || 'GENESIS_BLOCK';
 }
 
 // ── POST /api/auth/register ───────────────────────────────
@@ -28,17 +28,21 @@ router.post('/register', async (req, res) => {
     const rounds = Number(process.env.BCRYPT_ROUNDS) || 12;
     const passwordHash = await bcrypt.hash(password, rounds);
 
-    const result = await query(
-      `INSERT INTO users (full_name, email, password_hash, role)
-       VALUES ($1,$2,$3,$4)
-       RETURNING id, full_name, email, role, created_at`,
-      [fullName, email, passwordHash, role]
-    );
+    const users = getCollection('users');
+    const existing = await users.findOne({ email });
+    if (existing) return res.status(409).json({ error: 'Email already registered' });
 
-    res.status(201).json({ user: result.rows[0] });
+    const now = new Date();
+    const insert = await users.insertOne({ full_name: fullName, email, password_hash: passwordHash, role, created_at: now, is_active: true });
+    const user = {
+      id: insert.insertedId.toString(),
+      full_name: fullName,
+      email,
+      role,
+      created_at: now,
+    };
+    res.status(201).json({ user });
   } catch (err) {
-    if (err.code === '23505')
-      return res.status(409).json({ error: 'Email already registered' });
     console.error('[register]', err);
     res.status(500).json({ error: err.message || 'Registration failed' });
   }
@@ -49,34 +53,34 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const result = await query(
-      'SELECT * FROM users WHERE email=$1 AND is_active=true', [email]
-    );
-    const user = result.rows[0];
+    console.log('[login] attempt for', email);
+    const users = getCollection('users');
+    const user = await users.findOne({ email, is_active: true });
+    console.log('[login] user fetched:', !!user);
 
     if (!user || !(await bcrypt.compare(password, user.password_hash)))
       return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.full_name },
+      { id: user.id || user._id.toString(), email: user.email, role: user.role, name: user.full_name },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
 
     // Chained audit log entry
     const prev = await getLastLogHash();
-    const entry = { userId: user.id, action: 'LOGIN', recordId: null, timestamp: new Date().toISOString() };
+    const entry = { userId: user._id.toString(), action: 'LOGIN', recordId: null, timestamp: new Date().toISOString() };
     const currentHash = buildChainedHash(entry, prev);
-
-    await query(
-      `INSERT INTO audit_logs (user_id, action, previous_log_hash, current_log_hash, ip_address)
-       VALUES ($1,$2,$3,$4,$5)`,
-      [user.id, 'LOGIN', prev, currentHash, req.ip]
-    );
+    const audit = getCollection('audit_logs');
+    try {
+      await audit.insertOne({ user_id: new ObjectId(user._id), action: 'LOGIN', previous_log_hash: prev, current_log_hash: currentHash, ip_address: req.ip, timestamp: new Date() });
+    } catch (auditErr) {
+      console.error('[login] audit insert failed', auditErr);
+    }
 
     res.json({
       token,
-      user: { id: user.id, name: user.full_name, email: user.email, role: user.role },
+      user: { id: user._id.toString(), name: user.full_name, email: user.email, role: user.role },
     });
   } catch (err) {
     console.error('[login]', err);
