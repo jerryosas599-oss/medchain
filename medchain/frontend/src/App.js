@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const API = 'http://localhost:5000/api';
+const API = process.env.REACT_APP_BASE_URL || 'http://localhost:5000/api';
 
 function App() {
   const [page, setPage] = useState('login');

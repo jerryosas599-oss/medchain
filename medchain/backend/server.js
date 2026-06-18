@@ -1,16 +1,16 @@
 require('dotenv').config();
-const express = require('express');
-const cors    = require('cors');
+import express, { json } from 'express';
+import cors from 'cors';
 
-const authRoutes   = require('./routes/auth');
-const recordRoutes = require('./routes/records');
-const auditRoutes  = require('./routes/audit');
+import authRoutes from './routes/auth';
+import recordRoutes from './routes/records';
+import auditRoutes from './routes/audit';
 
 const app = express();
 
 // ── Middleware ────────────────────────────────────────────
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true }));
-app.use(express.json({ limit: '2mb' }));
+app.use(json({ limit: '2mb' }));
 
 // Security headers
 app.use((req, res, next) => {
@@ -39,3 +39,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () =>
   console.log(`MedChain API running → http://localhost:${PORT}`)
 );
+
+
+module.exports = app; //vercel serveless export
+
