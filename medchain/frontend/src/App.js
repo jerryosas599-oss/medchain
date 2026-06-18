@@ -23,12 +23,9 @@ function App() {
       // .catch(() => setDbStatus('Not connected ❌'));
   }, []);
 
-  useEffect(() => {
-    if (user) fetchRecords();
-  }, [fetchRecords, user]);
-
+  
   const token = () => localStorage.getItem('token');
-
+  
   const fetchRecords = useCallback(async () => {
     try {
       const res = await fetch(`${API}/records`, {
@@ -39,7 +36,11 @@ function App() {
       else if (Array.isArray(data)) setRecords(data);
     } catch {}
   }, []);
-
+  
+  useEffect(() => {
+    if (user) fetchRecords();
+  }, [fetchRecords, user]);
+  
   const handleLogin = async () => {
     setError('');
     try {
