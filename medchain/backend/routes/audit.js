@@ -1,13 +1,13 @@
-const express = require('express');
-const pool    = require('../db/pool');
-const { authenticate, authorize } = require('../middleware/auth');
+import { Router } from 'express';
+import { query } from '../db/pool.js';
+import { authenticate, authorize } from '../middleware/auth.js';
 
-const router = express.Router();
+const router = Router();
 
 // ── GET /api/audit — Retrieve chained audit log ───────────
 router.get('/', authenticate, authorize('doctor', 'admin'), async (req, res) => {
   try {
-    const result = await pool.query(
+    const result = await query(
       `SELECT al.*, u.full_name AS user_name
        FROM audit_logs al
        LEFT JOIN users u ON al.user_id = u.id
@@ -21,4 +21,4 @@ router.get('/', authenticate, authorize('doctor', 'admin'), async (req, res) => 
   }
 });
 
-module.exports = router;
+export default router;

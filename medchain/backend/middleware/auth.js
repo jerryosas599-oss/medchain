@@ -1,10 +1,10 @@
-const jwt = require('jsonwebtoken');
+import jwt from 'jsonwebtoken';
 
 /**
  * JWT authentication middleware.
  * Expects: Authorization: Bearer <token>
  */
-function authenticate(req, res, next) {
+export function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided' });
@@ -22,7 +22,7 @@ function authenticate(req, res, next) {
  * RBAC authorization middleware.
  * Usage: authorize('doctor', 'admin')
  */
-function authorize(...roles) {
+export function authorize(...roles) {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({ error: 'Insufficient permissions' });
@@ -30,5 +30,3 @@ function authorize(...roles) {
     next();
   };
 }
-
-module.exports = { authenticate, authorize };

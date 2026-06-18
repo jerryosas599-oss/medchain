@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+import { createHash } from 'crypto';
 
 /**
  * Hash a record object with SHA-256.
@@ -54,7 +54,7 @@ function buildChainedHash(entry, previousHash) {
  * @returns {string}
  */
 function hashString(value) {
-  return crypto.createHash('sha256').update(String(value)).digest('hex');
+  return createHash('sha256').update(String(value)).digest('hex');
 }
 
-module.exports = { hashRecord, verifyRecord, buildChainedHash, hashString };
+export { hashRecord, verifyRecord, buildChainedHash, hashString };

@@ -1,10 +1,15 @@
-require('dotenv').config();
+process.on('warning', warning => {
+  console.warn(warning.name, warning.message);
+  console.warn(warning.stack);
+});
+
+import 'dotenv/config';
 import express, { json } from 'express';
 import cors from 'cors';
 
-import authRoutes from './routes/auth';
-import recordRoutes from './routes/records';
-import auditRoutes from './routes/audit';
+import authRoutes from './routes/auth.js';
+import recordRoutes from './routes/records.js';
+import auditRoutes from './routes/audit.js';
 
 const app = express();
 
@@ -41,5 +46,5 @@ app.listen(PORT, () =>
 );
 
 
-module.exports = app; //vercel serveless export
+export default app; //vercel serveless export
 
