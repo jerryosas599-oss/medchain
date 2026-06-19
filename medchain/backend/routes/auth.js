@@ -88,6 +88,62 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// ── PUT /api/auth/profile — update current user's profile (full name)
+router.put('/profile', async (req, res) => {
+  try {
+    const tokenHeader = req.headers.authorization;
+    if (!tokenHeader || !tokenHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'No token provided' });
+    const token = tokenHeader.split(' ')[1];
+    let payload;
+    try {
+      payload = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    const { fullName } = req.body;
+    if (!fullName) return res.status(400).json({ error: 'fullName is required' });
+
+    const users = getCollection('users');
+    const upd = await users.findOneAndUpdate(
+      { _id: new ObjectId(payload.id || payload._id) },
+      { $set: { full_name: fullName } },
+      { returnDocument: 'after' }
+    );
+
+    if (!upd.value) return res.status(404).json({ error: 'User not found' });
+
+    const user = upd.value;
+    res.json({ user: { id: user._id.toString(), name: user.full_name, email: user.email, role: user.role } });
+  } catch (err) {
+    console.error('[profile update]', err);
+    res.status(500).json({ error: 'Profile update failed' });
+  }
+});
+
+// ── GET /api/auth/me — return current user from token
+router.get('/me', async (req, res) => {
+  try {
+    const tokenHeader = req.headers.authorization;
+    if (!tokenHeader || !tokenHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'No token provided' });
+    const token = tokenHeader.split(' ')[1];
+    let payload;
+    try {
+      payload = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    const users = getCollection('users');
+    const user = await users.findOne({ _id: new ObjectId(payload.id || payload._id) });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ user: { id: user._id.toString(), name: user.full_name, email: user.email, role: user.role } });
+  } catch (err) {
+    console.error('[me]', err);
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
 export default router;
 const _getLastLogHash = getLastLogHash;
 export { _getLastLogHash as getLastLogHash };

@@ -25,6 +25,7 @@ function App() {
 
   
   const token = () => localStorage.getItem('token');
+  const storedUser = () => JSON.parse(localStorage.getItem('user') || 'null');
   
   const fetchRecords = useCallback(async () => {
     try {
@@ -38,8 +39,38 @@ function App() {
   }, []);
   
   useEffect(() => {
-    if (user) fetchRecords();
+    // Restore user from localStorage or rehydrate from backend
+    (async () => {
+      if (!user) {
+        const u = storedUser();
+        if (u) { setUser(u); return; }
+      }
+
+      const t = token();
+      if (t && !user) {
+        try {
+          const res = await fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${t}` } });
+          if (res.ok) {
+            const d = await res.json();
+            localStorage.setItem('user', JSON.stringify(d.user));
+            setUser(d.user);
+            return;
+          }
+        } catch (e) {
+          console.warn('rehydrate failed', e);
+        }
+      }
+
+      if (user) fetchRecords();
+    })();
   }, [fetchRecords, user]);
+
+  // Auto-redirect: if a user is present and currently on auth pages, move to dashboard
+  useEffect(() => {
+    if (user && (page === 'login' || page === 'register')) {
+      setPage('dashboard');
+    }
+  }, [user, page]);
   
   const handleLogin = async () => {
     setError('');
@@ -52,6 +83,7 @@ function App() {
       const data = await res.json();
       if (!res.ok) { setError(data.error); return; }
       localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
       setUser(data.user);
     } catch {
       setError('Server error. Is backend running?');
@@ -94,15 +126,50 @@ function App() {
     }
   };
 
+  // Profile edit
+  const [editingName, setEditingName] = useState(false);
+  const [profileName, setProfileName] = useState('');
+
+  const handleStartEdit = () => {
+    setProfileName(user?.name || user?.full_name || '');
+    setEditingName(true);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      const res = await fetch(`${API}/auth/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ fullName: profileName })
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Update failed'); return; }
+      const newUser = { id: data.user.id, name: data.user.name, email: data.user.email, role: data.user.role };
+      localStorage.setItem('user', JSON.stringify(newUser));
+      setUser(newUser);
+      setEditingName(false);
+    } catch (e) {
+      alert('Update failed');
+    }
+  };
+
   if (user) return (
     <div style={{ fontFamily:'sans-serif', minHeight:'100vh', background:'#EEF2F7' }}>
       <div style={{ background:'#0B1F3A', padding:'16px 32px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
         <h2 style={{ color:'white', margin:0 }}>🏥 MedChain</h2>
         <div>
           <span style={{ color:'rgba(255,255,255,0.7)', fontSize:14 }}>{user.name} · {user.role}</span>
-          <button onClick={() => { setUser(null); localStorage.removeItem('token'); }} style={{ background:'#0E7C7B', color:'white', border:'none', padding:'8px 16px', borderRadius:6, marginLeft:16, cursor:'pointer' }}>Logout</button>
+          <button onClick={handleStartEdit} style={{ background:'#116980', color:'white', border:'none', padding:'6px 10px', borderRadius:6, marginLeft:8, cursor:'pointer' }}>Edit Name</button>
+          <button onClick={() => { setUser(null); localStorage.removeItem('token'); localStorage.removeItem('user'); setPage('login'); }} style={{ background:'#0E7C7B', color:'white', border:'none', padding:'8px 16px', borderRadius:6, marginLeft:16, cursor:'pointer' }}>Logout</button>
         </div>
       </div>
+      {editingName && (
+        <div style={{ padding:16, display:'flex', gap:8 }}>
+          <input value={profileName} onChange={e => setProfileName(e.target.value)} style={{ padding:8, borderRadius:6 }} />
+          <button onClick={handleSaveProfile} style={{ background:'#0E7C7B', color:'white', border:'none', padding:'8px 12px', borderRadius:6 }}>Save</button>
+          <button onClick={() => setEditingName(false)} style={{ background:'#ccc', border:'none', padding:'8px 12px', borderRadius:6 }}>Cancel</button>
+        </div>
+      )}
       <div style={{ padding:32 }}>
         <div style={{ background:'linear-gradient(135deg,#0B1F3A,#0E7C7B)', borderRadius:14, padding:32, marginBottom:24 }}>
           <div style={{ fontSize:13, opacity:0.7, color:'white' }}>Welcome back</div>

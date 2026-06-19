@@ -9,10 +9,23 @@ const router = Router();
 
 // ── POST /api/records — Create + hash a new record ────────
 router.post('/', authenticate, authorize('doctor', 'admin', 'patient'), async (req, res) => {
-  const { patientId, diagnosis, medication, notes, allergies } = req.body;
+  let { patientId, diagnosis, medication, notes, allergies } = req.body;
+
+  // If the requester is a patient, force patientId to their own id (prevent spoofing)
+  if (req.user.role === 'patient') {
+    patientId = req.user.id;
+  }
 
   if (!patientId || !diagnosis)
     return res.status(400).json({ error: 'patientId and diagnosis are required' });
+
+  // Validate patientId
+  let patientObjId;
+  try {
+    patientObjId = new ObjectId(patientId);
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid patientId' });
+  }
 
   // Build the canonical record object (keys sorted for deterministic hashing)
   const data = {
@@ -27,15 +40,19 @@ router.post('/', authenticate, authorize('doctor', 'admin', 'patient'), async (r
 
   try {
     const records = getCollection('health_records');
-    const insert = await records.insertOne({ patient_id: new ObjectId(patientId), record_data: data, record_hash: hash, created_by: new ObjectId(req.user.id), created_at: new Date() });
+    const insert = await records.insertOne({ patient_id: patientObjId, record_data: data, record_hash: hash, created_by: new ObjectId(req.user.id), created_at: new Date() });
 
     // Audit chain
     const prev = await getLastLogHash();
     const entry = { userId: req.user.id, action: 'CREATE_RECORD', recordId: insert.insertedId.toString(), timestamp: new Date().toISOString() };
     const audit = getCollection('audit_logs');
-    await audit.insertOne({ user_id: new ObjectId(req.user.id), action: 'CREATE_RECORD', record_id: insert.insertedId, previous_log_hash: prev, current_log_hash: buildChainedHash(entry, prev), ip_address: req.ip, timestamp: new Date() });
+    try {
+      await audit.insertOne({ user_id: new ObjectId(req.user.id), action: 'CREATE_RECORD', record_id: insert.insertedId, previous_log_hash: prev, current_log_hash: buildChainedHash(entry, prev), ip_address: req.ip, timestamp: new Date() });
+    } catch (ae) {
+      console.error('[create record] audit insert failed', ae);
+    }
 
-    res.status(201).json({ record: { id: insert.insertedId.toString(), patient_id: patientId, record_data: data, record_hash: hash }, hash });
+    res.status(201).json({ record: { id: insert.insertedId.toString(), patient_id: patientObjId.toString(), record_data: data, record_hash: hash }, hash });
   } catch (err) {
     console.error('[create record]', err);
     res.status(500).json({ error: 'Failed to create record' });
@@ -55,7 +72,9 @@ router.get('/', authenticate, async (req, res) => {
       { $lookup: { from: 'users', localField: 'created_by', foreignField: '_id', as: 'creator' } },
       { $unwind: { path: '$patient', preserveNullAndEmptyArrays: true } },
       { $unwind: { path: '$creator', preserveNullAndEmptyArrays: true } },
-      { $project: { record_data: 1, record_hash: 1, patient_name: '$patient.full_name', created_by_name: '$creator.full_name', created_at: 1 } },
+      { $project: { _id: 1, patient_id: 1, record_data: 1, record_hash: 1, patient_name: '$patient.full_name', created_by_name: '$creator.full_name', created_at: 1 } },
+      { $addFields: { id: { $toString: '$_id' }, patient_id: { $toString: '$patient_id' } } },
+      { $project: { _id: 0, id: 1, patient_id: 1, record_data: 1, record_hash: 1, patient_name: 1, created_by_name: 1, created_at: 1 } },
       { $sort: { created_at: -1 } }
     );
 

@@ -10,6 +10,16 @@ async function run() {
   const db = client.db(process.env.DB_NAME || 'medchain');
 
   const users = db.collection('users');
+  const records = db.collection('health_records');
+  const audit = db.collection('audit_logs');
+
+  // Clear collections for a clean seed (use with caution in production)
+  await Promise.all([
+    users.deleteMany({}),
+    records.deleteMany({}),
+    audit.deleteMany({}),
+  ]);
+
   // ensure unique index on email
   await users.createIndex({ email: 1 }, { unique: true });
 
@@ -18,10 +28,10 @@ async function run() {
 
   const now = new Date();
   const userDoc = {
-    full_name: 'Default User',
+    full_name: 'Muhammed Abiodun',
     email: 'user@gmail.com',
     password_hash: passwordHash,
-    role: 'admin',
+    role: 'patient',
     is_active: true,
     created_at: now,
   };
@@ -30,8 +40,7 @@ async function run() {
     const res = await users.insertOne(userDoc);
     console.log('Seeded user id:', res.insertedId.toString());
   } catch (err) {
-    if (err.code === 11000) console.log('User already exists, skipping');
-    else console.error('Seed error', err);
+    console.error('Seed error', err);
   } finally {
     await client.close();
   }
