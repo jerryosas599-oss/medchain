@@ -118,17 +118,33 @@ router.put('/:id', authenticate, async (req, res) => {
     const rec = await records.findOne({ _id: new ObjectId(id) });
     if (!rec) return res.status(404).json({ error: 'Record not found' });
 
-    // Authorization: allow admin, doctor, or the original creator
-    const allowed = req.user.role === 'admin' || req.user.role === 'doctor';
-    if (!allowed) return res.status(403).json({ error: 'Not authorized to edit this record' });
+    // Authorization rules:
+    // - admin/doctor: can edit any field
+    // - patient: can edit their own record, but only allowed fields (notes, medication, allergies)
+    const isDoctorOrAdmin = req.user.role === 'admin' || req.user.role === 'doctor';
+    const isPatientOwner = req.user.role === 'patient' && rec.record_data && rec.record_data.patientId === req.user.id;
+    if (!isDoctorOrAdmin && !isPatientOwner) return res.status(403).json({ error: 'Not authorized to edit this record' });
 
-    const updatedData = {
-      allergies: (allergies !== undefined ? allergies : (rec.record_data && rec.record_data.allergies) ) || '',
-      diagnosis: (diagnosis !== undefined ? diagnosis : (rec.record_data && rec.record_data.diagnosis) ),
-      medication: (medication !== undefined ? medication : (rec.record_data && rec.record_data.medication) ) || '',
-      notes: (notes !== undefined ? notes : (rec.record_data && rec.record_data.notes) ) || '',
-      patientId: rec.record_data ? rec.record_data.patientId : undefined,
-    };
+    // Build updatedData depending on role
+    let updatedData;
+    if (isDoctorOrAdmin) {
+      updatedData = {
+        allergies: (allergies !== undefined ? allergies : (rec.record_data && rec.record_data.allergies) ) || '',
+        diagnosis: (diagnosis !== undefined ? diagnosis : (rec.record_data && rec.record_data.diagnosis) ),
+        medication: (medication !== undefined ? medication : (rec.record_data && rec.record_data.medication) ) || '',
+        notes: (notes !== undefined ? notes : (rec.record_data && rec.record_data.notes) ) || '',
+        patientId: rec.record_data ? rec.record_data.patientId : undefined,
+      };
+    } else {
+      // patient owner: only allow notes/medication/allergies edits
+      updatedData = {
+        allergies: (allergies !== undefined ? allergies : (rec.record_data && rec.record_data.allergies) ) || '',
+        diagnosis: (rec.record_data && rec.record_data.diagnosis),
+        medication: (medication !== undefined ? medication : (rec.record_data && rec.record_data.medication) ) || '',
+        notes: (notes !== undefined ? notes : (rec.record_data && rec.record_data.notes) ) || '',
+        patientId: rec.record_data ? rec.record_data.patientId : undefined,
+      };
+    }
 
     const newHash = hashRecord(updatedData);
     const upd = await records.findOneAndUpdate(

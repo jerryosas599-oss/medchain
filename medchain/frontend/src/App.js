@@ -18,6 +18,8 @@ function App() {
   const [editingRecordId, setEditingRecordId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
+  const [editMedication, setEditMedication] = useState('');
+  const [editAllergies, setEditAllergies] = useState('');
 
   useEffect(() => {
     fetch(`${API}/health`)
@@ -134,21 +136,27 @@ function App() {
     setEditingRecordId(r.id);
     setEditTitle(rec.diagnosis || '');
     setEditContent(rec.notes || '');
+    setEditMedication(rec.medication || '');
+    setEditAllergies(rec.allergies || '');
   };
 
   const handleCancelEdit = () => {
     setEditingRecordId(null);
     setEditTitle('');
     setEditContent('');
+    setEditMedication('');
+    setEditAllergies('');
   };
 
   const handleSaveEdit = async () => {
     if (!editingRecordId) return;
     try {
+      // Send full set of editable fields; backend will enforce role restrictions
+      const body = { diagnosis: editTitle, notes: editContent, medication: editMedication, allergies: editAllergies };
       const res = await fetch(`${API}/records/${editingRecordId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({ diagnosis: editTitle, notes: editContent })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
       if (!res.ok) { alert(data.error || 'Update failed'); return; }
@@ -258,22 +266,39 @@ function App() {
                   )}
 
                   {/* Edit / Delete controls (doctors/admins only) */}
-                  {(user.role === 'admin' || user.role === 'doctor') && (
+                  {(user.role === 'admin' || user.role === 'doctor' || (user.role === 'patient' && user.id === r.patient_id)) && (
                     <div style={{ marginTop:8, display:'flex', gap:8 }}>
                       <button onClick={() => handleEditClick(r)} style={{ background:'#116980', color:'white', border:'none', padding:'6px 10px', borderRadius:6, cursor:'pointer' }}>Edit</button>
-                      <button onClick={() => handleDeleteRecord(r.id)} style={{ background:'#c0392b', color:'white', border:'none', padding:'6px 10px', borderRadius:6, cursor:'pointer' }}>Delete</button>
+                      {(user.role === 'admin' || user.role === 'doctor') && (
+                        <button onClick={() => handleDeleteRecord(r.id)} style={{ background:'#c0392b', color:'white', border:'none', padding:'6px 10px', borderRadius:6, cursor:'pointer' }}>Delete</button>
+                      )}
                     </div>
                   )}
 
                   {/* Inline editor */}
                   {editingRecordId === r.id && (
                     <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
-                      <input value={editTitle} onChange={e => setEditTitle(e.target.value)} style={{ padding:8, borderRadius:6 }} />
-                      <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={3} style={{ padding:8, borderRadius:6 }} />
-                      <div style={{ display:'flex', gap:8 }}>
-                        <button onClick={handleSaveEdit} style={{ background:'#0E7C7B', color:'white', border:'none', padding:'8px 12px', borderRadius:6 }}>Save</button>
-                        <button onClick={handleCancelEdit} style={{ background:'#ccc', border:'none', padding:'8px 12px', borderRadius:6 }}>Cancel</button>
-                      </div>
+                      {/* If patient editing own record, only allow notes/medication/allergies */}
+                      {user.role === 'patient' ? (
+                        <>
+                          <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={4} style={{ padding:8, borderRadius:6 }} />
+                          <div style={{ display:'flex', gap:8 }}>
+                            <button onClick={handleSaveEdit} style={{ background:'#0E7C7B', color:'white', border:'none', padding:'8px 12px', borderRadius:6 }}>Save</button>
+                            <button onClick={handleCancelEdit} style={{ background:'#ccc', border:'none', padding:'8px 12px', borderRadius:6 }}>Cancel</button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <input value={editTitle} onChange={e => setEditTitle(e.target.value)} style={{ padding:8, borderRadius:6, marginBottom:8 }} />
+                          <input placeholder="Medication" value={editMedication} onChange={e => setEditMedication(e.target.value)} style={{ padding:8, borderRadius:6, marginBottom:8 }} />
+                          <input placeholder="Allergies" value={editAllergies} onChange={e => setEditAllergies(e.target.value)} style={{ padding:8, borderRadius:6, marginBottom:8 }} />
+                          <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={3} style={{ padding:8, borderRadius:6 }} />
+                          <div style={{ display:'flex', gap:8 }}>
+                            <button onClick={handleSaveEdit} style={{ background:'#0E7C7B', color:'white', border:'none', padding:'8px 12px', borderRadius:6 }}>Save</button>
+                            <button onClick={handleCancelEdit} style={{ background:'#ccc', border:'none', padding:'8px 12px', borderRadius:6 }}>Cancel</button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
