@@ -105,13 +105,26 @@ router.put('/profile', async (req, res) => {
     if (!fullName) return res.status(400).json({ error: 'fullName is required' });
 
     const users = getCollection('users');
+
+    // Try to find the user by id first (if present), otherwise fall back to email
+    let queryUser = null;
+    if (payload.id) {
+      try {
+        queryUser = await users.findOne({ _id: new ObjectId(payload.id) });
+      } catch (e) {
+        queryUser = null;
+      }
+    }
+    if (!queryUser && payload.email) {
+      queryUser = await users.findOne({ email: payload.email });
+    }
+    if (!queryUser) return res.status(404).json({ error: 'User not found' });
+
     const upd = await users.findOneAndUpdate(
-      { _id: new ObjectId(payload.id || payload._id) },
+      { _id: queryUser._id },
       { $set: { full_name: fullName } },
       { returnDocument: 'after' }
     );
-
-    if (!upd.value) return res.status(404).json({ error: 'User not found' });
 
     const user = upd.value;
     res.json({ user: { id: user._id.toString(), name: user.full_name, email: user.email, role: user.role } });
@@ -135,9 +148,16 @@ router.get('/me', async (req, res) => {
     }
 
     const users = getCollection('users');
-    const user = await users.findOne({ _id: new ObjectId(payload.id || payload._id) });
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ user: { id: user._id.toString(), name: user.full_name, email: user.email, role: user.role } });
+    // attempt lookup by id then email
+    let queryUser = null;
+    if (payload.id) {
+      try { queryUser = await users.findOne({ _id: new ObjectId(payload.id) }); } catch (e) { queryUser = null; }
+    }
+    if (!queryUser && payload.email) {
+      queryUser = await users.findOne({ email: payload.email });
+    }
+    if (!queryUser) return res.status(404).json({ error: 'User not found' });
+    res.json({ user: { id: queryUser._id.toString(), name: queryUser.full_name, email: queryUser.email, role: queryUser.role } });
   } catch (err) {
     console.error('[me]', err);
     res.status(500).json({ error: 'Failed to fetch user' });
