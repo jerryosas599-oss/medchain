@@ -15,7 +15,19 @@ import { connectDB } from './db/mongo.js';
 const app = express();
 
 // ── Middleware ────────────────────────────────────────────
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true }));
+// CORS: allow a comma-separated list in FRONTEND_URL (e.g. "https://a.vercel.app,https://b.vercel.app")
+const rawFrontends = process.env.FRONTEND_URL || 'http://localhost:3000';
+const allowedOrigins = rawFrontends.split(',').map(s => s.trim()).filter(Boolean);
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // allow non-browser requests (e.g. curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS policy: origin not allowed'));
+  },
+  credentials: true
+}));
 app.use(json({ limit: '2mb' }));
 
 // Security headers
