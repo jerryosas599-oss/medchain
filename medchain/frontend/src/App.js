@@ -15,6 +15,9 @@ function App() {
   const [recordTitle, setRecordTitle] = useState('');
   const [recordContent, setRecordContent] = useState('');
   const [recordMsg, setRecordMsg] = useState('');
+  const [editingRecordId, setEditingRecordId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
 
   useEffect(() => {
     fetch(`${API}/health`)
@@ -126,6 +129,44 @@ function App() {
     }
   };
 
+  const handleEditClick = (r) => {
+    const rec = r.record_data || {};
+    setEditingRecordId(r.id);
+    setEditTitle(rec.diagnosis || '');
+    setEditContent(rec.notes || '');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingRecordId(null);
+    setEditTitle('');
+    setEditContent('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingRecordId) return;
+    try {
+      const res = await fetch(`${API}/records/${editingRecordId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ diagnosis: editTitle, notes: editContent })
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Update failed'); return; }
+      handleCancelEdit();
+      fetchRecords();
+    } catch (e) { alert('Update failed'); }
+  };
+
+  const handleDeleteRecord = async (id) => {
+    if (!window.confirm('Delete this record?')) return;
+    try {
+      const res = await fetch(`${API}/records/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Delete failed'); return; }
+      fetchRecords();
+    } catch (e) { alert('Delete failed'); }
+  };
+
   // Profile edit
   const [editingName, setEditingName] = useState(false);
   const [profileName, setProfileName] = useState('');
@@ -204,8 +245,37 @@ function App() {
                   <div style={{ fontWeight:700, color:'#0B1F3A' }}>{rec.diagnosis || rec.title || 'Record'}</div>
                   <div style={{ color:'#6B7A99', fontSize:13, marginTop:4 }}>{rec.notes || rec.content || 'No details available.'}</div>
                   <div style={{ color:'#aaa', fontSize:11, fontWeight:500, marginTop:8 }}>Patient: {r.patient_name || r.patientName || 'Unknown'}</div>
+                  <div style={{ color:'#666', fontSize:12, marginTop:6 }} title={r.created_by_name ? `Created by ${r.created_by_name}` : ''}>
+                    Created by: {r.created_by_email ? <a href={`mailto:${r.created_by_email}`} style={{ color:'#0E7C7B' }}>{r.created_by_name}</a> : <span>{r.created_by_name}</span>}
+                  </div>
                   <div style={{ color:'#aaa', fontSize:11, marginTop:4 }}>🔒 Hash: {hash?.substring(0,20)}...</div>
-                  <div style={{ color:'#aaa', fontSize:11 }}>📅 {new Date(r.created_at).toLocaleDateString()}</div>
+                  <div style={{ color:'#aaa', fontSize:11 }}>📅 Created: {r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</div>
+                  {r.updated_at && <div style={{ color:'#aaa', fontSize:11 }}>✏️ Updated: {new Date(r.updated_at).toLocaleString()}</div>}
+                  {r.updated_at && (
+                    <div style={{ color:'#666', fontSize:12 }} title={r.updated_by_name ? `Updated by ${r.updated_by_name}` : ''}>
+                      Updated by: {r.updated_by_email ? <a href={`mailto:${r.updated_by_email}`} style={{ color:'#0E7C7B' }}>{r.updated_by_name}</a> : <span>{r.updated_by_name}</span>}
+                    </div>
+                  )}
+
+                  {/* Edit / Delete controls (doctors/admins only) */}
+                  {(user.role === 'admin' || user.role === 'doctor') && (
+                    <div style={{ marginTop:8, display:'flex', gap:8 }}>
+                      <button onClick={() => handleEditClick(r)} style={{ background:'#116980', color:'white', border:'none', padding:'6px 10px', borderRadius:6, cursor:'pointer' }}>Edit</button>
+                      <button onClick={() => handleDeleteRecord(r.id)} style={{ background:'#c0392b', color:'white', border:'none', padding:'6px 10px', borderRadius:6, cursor:'pointer' }}>Delete</button>
+                    </div>
+                  )}
+
+                  {/* Inline editor */}
+                  {editingRecordId === r.id && (
+                    <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
+                      <input value={editTitle} onChange={e => setEditTitle(e.target.value)} style={{ padding:8, borderRadius:6 }} />
+                      <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={3} style={{ padding:8, borderRadius:6 }} />
+                      <div style={{ display:'flex', gap:8 }}>
+                        <button onClick={handleSaveEdit} style={{ background:'#0E7C7B', color:'white', border:'none', padding:'8px 12px', borderRadius:6 }}>Save</button>
+                        <button onClick={handleCancelEdit} style={{ background:'#ccc', border:'none', padding:'8px 12px', borderRadius:6 }}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })
