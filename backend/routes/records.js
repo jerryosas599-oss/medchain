@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { hashRecord, verifyRecord, buildChainedHash } from '../utils/hash.js';
+import { encryptRecord, decryptRecord } from '../utils/crypto.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { getLastLogHash } from './auth.js';
 import { getCollection, connectDB } from '../db/mongo.js';
@@ -37,10 +38,12 @@ router.post('/', authenticate, authorize('doctor', 'admin', 'patient'), async (r
   };
 
   const hash = hashRecord(data);
+  // Encrypt sensitive record_data so only server (doctors/admins) can decrypt
+  const encrypted = encryptRecord(data);
 
   try {
     const records = getCollection('health_records');
-    const insert = await records.insertOne({ patient_id: patientObjId, record_data: data, record_hash: hash, created_by: new ObjectId(req.user.id), created_at: new Date() });
+    const insert = await records.insertOne({ patient_id: patientObjId, record_data: encrypted, record_hash: hash, created_by: new ObjectId(req.user.id), created_at: new Date() });
 
     // Audit chain
     const prev = await getLastLogHash();
@@ -52,7 +55,8 @@ router.post('/', authenticate, authorize('doctor', 'admin', 'patient'), async (r
       console.error('[create record] audit insert failed', ae);
     }
 
-    res.status(201).json({ record: { id: insert.insertedId.toString(), patient_id: patientObjId.toString(), record_data: data, record_hash: hash }, hash });
+    // Return non-sensitive metadata; full decrypted data is available to authorized users via GET
+    res.status(201).json({ record: { id: insert.insertedId.toString(), patient_id: patientObjId.toString(), record_hash: hash }, hash });
   } catch (err) {
     console.error('[create record]', err);
     res.status(500).json({ error: 'Failed to create record' });
@@ -81,7 +85,21 @@ router.get('/', authenticate, async (req, res) => {
     );
 
     const result = await records.aggregate(pipeline).toArray();
-    res.json({ records: result });
+
+    // Decrypt record_data only for doctor/admin. Patients and others receive redacted data.
+    const transformed = result.map(r => {
+      try {
+        if (req.user.role === 'doctor' || req.user.role === 'admin') {
+          const dec = decryptRecord(r.record_data);
+          return { ...r, record_data: dec };
+        }
+      } catch (e) {
+        console.error('[decrypt record]', e);
+      }
+      return { ...r, record_data: { diagnosis: 'REDACTED' } };
+    });
+
+    res.json({ records: transformed });
   } catch (err) {
     console.error('[list records]', err);
     res.status(500).json({ error: 'Failed to fetch records' });
@@ -95,7 +113,13 @@ router.get('/:id/verify', authenticate, async (req, res) => {
     const rec = await records.findOne({ _id: new ObjectId(req.params.id) });
     if (!rec) return res.status(404).json({ error: 'Record not found' });
 
-    const intact = verifyRecord(rec.record_data, rec.record_hash);
+    // Only doctor/admin can verify/decrypt records
+    if (!(req.user.role === 'doctor' || req.user.role === 'admin')) return res.status(403).json({ error: 'Insufficient permissions to verify record' });
+
+    let recordData = rec.record_data;
+    try { recordData = decryptRecord(rec.record_data); } catch (e) { /* ignore, may already be plaintext */ }
+
+    const intact = verifyRecord(recordData, rec.record_hash);
     const prev = await getLastLogHash();
     const entry = { userId: req.user.id, action: 'VERIFY_RECORD', recordId: rec._id.toString(), timestamp: new Date().toISOString() };
     const audit = getCollection('audit_logs');
@@ -147,9 +171,10 @@ router.put('/:id', authenticate, async (req, res) => {
     }
 
     const newHash = hashRecord(updatedData);
+    const encrypted = encryptRecord(updatedData);
     const upd = await records.findOneAndUpdate(
       { _id: new ObjectId(id) },
-      { $set: { record_data: updatedData, record_hash: newHash, updated_at: new Date(), updated_by: new ObjectId(req.user.id) } },
+      { $set: { record_data: encrypted, record_hash: newHash, updated_at: new Date(), updated_by: new ObjectId(req.user.id) } },
       { returnDocument: 'after' }
     );
 
@@ -160,7 +185,7 @@ router.put('/:id', authenticate, async (req, res) => {
     try { await audit.insertOne({ user_id: new ObjectId(req.user.id), action: 'UPDATE_RECORD', record_id: new ObjectId(id), previous_log_hash: prev, current_log_hash: buildChainedHash(entry, prev), ip_address: req.ip, timestamp: new Date() }); } catch (e) { console.error('[update record] audit failed', e); }
 
     const updatedAt = (upd && upd.value && upd.value.updated_at) ? upd.value.updated_at : new Date();
-    res.json({ record: { id: id, patient_id: rec.patient_id.toString(), record_data: updatedData, record_hash: newHash, updated_at: updatedAt } });
+    res.json({ record: { id: id, patient_id: rec.patient_id.toString(), record_hash: newHash, updated_at: updatedAt } });
   } catch (err) {
     console.error('[update record]', err);
     res.status(500).json({ error: 'Failed to update record' });
